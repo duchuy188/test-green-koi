@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { Form, Input, Button, message, Card } from "antd";
+import { Form, Input, Button, Card } from "antd";
 import { CKEditor } from "@ckeditor/ckeditor5-react";
 import ClassicEditor from "@ckeditor/ckeditor5-build-classic";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { storage } from "../../../config/firebase";
 import api from "../../../config/axios";
 import { useLocation, useNavigate } from "react-router-dom";
+import { toast } from "react-toastify";
 
 function DesignBlog() {
   const [form] = Form.useForm();
@@ -19,12 +20,11 @@ function DesignBlog() {
   useEffect(() => {
     if (location.state && location.state.design) {
       const design = location.state.design;
-      console.log("Received design data:", design); // Thêm log để debug
       setDesignData(design);
       setDescriptionData(design.content || "");
       form.setFieldsValue({
         title: design.title,
-        imageUrl: design.imageUrl,
+        coverImageUrl: design.coverImageUrl,
       });
     }
   }, [location.state, form]);
@@ -76,7 +76,7 @@ function DesignBlog() {
     setLoading(true);
     try {
       if (!descriptionData.trim()) {
-        message.error("Vui lòng nhập nội dung bài viết!");
+        toast.error("Vui lòng nhập nội dung bài viết!");
         setLoading(false);
         return;
       }
@@ -85,26 +85,20 @@ function DesignBlog() {
         title: values.title.trim(),
         content: descriptionData,
         status: "DRAFT",
-        imageUrl: values.imageUrl.trim(),
+        coverImageUrl: values.coverImageUrl.trim(),
         type: "BLOG",
       };
-
-      console.log("=== DEBUG INFO ===");
-      console.log("Request Data:", designValues);
-      console.log("Design ID:", designData?.id);
 
       let response;
       if (designData && designData.id) {
         // Update existing blog
         const updateUrl = `/api/blog/drafts/${designData.id}`;
-        console.log("PUT Request URL:", updateUrl);
 
         try {
           response = await api.put(updateUrl, designValues);
-          console.log("Update Response:", response);
 
           if (response.data) {
-            message.success("Cập nhật bài viết thành công");
+            toast.success("Cập nhật bài viết thành công");
             form.resetFields();
             setDescriptionData("");
             navigate("/dashboard/blogproject"); // Giữ nguyên redirect khi cập nhật
@@ -116,13 +110,11 @@ function DesignBlog() {
       } else {
         // Create new blog
         const createUrl = "/api/blog/drafts";
-        console.log("POST Request URL:", createUrl);
 
         response = await api.post(createUrl, designValues);
-        console.log("Create Response:", response);
 
         if (response.data) {
-          message.success("Tạo bài viết thành công");
+          toast.success("Tạo bài viết thành công");
           form.resetFields(); // Reset form
           setDescriptionData(""); // Reset content
           // Bỏ dòng navigate("/dashboard/blogproject") để ở lại trang hiện tại
@@ -140,7 +132,7 @@ function DesignBlog() {
         errorMessage = err.message;
       }
 
-      message.error(
+      toast.error(
         "Không thể " +
           (designData ? "cập nhật" : "tạo") +
           " bài viết: " +
@@ -201,7 +193,7 @@ function DesignBlog() {
           </Form.Item>
 
           <Form.Item
-            name="imageUrl"
+            name="coverImageUrl"
             label="Link ảnh bìa"
             rules={[
               { required: true, message: "Vui lòng nhập link hình ảnh!" },

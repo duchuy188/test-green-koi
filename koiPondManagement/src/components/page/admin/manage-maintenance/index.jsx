@@ -27,14 +27,18 @@ const ManageMaintenance = () => {
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [selectedRequest, setSelectedRequest] = useState(null);
-  const [form] = Form.useForm();
   const [editingRequest, setEditingRequest] = useState(null);
-  const [isModalVisible, setIsModalVisible] = useState(false);
   const [isAssignModalVisible, setIsAssignModalVisible] = useState(false);
   const [staffList, setStaffList] = useState([]);
   const [selectedStaffId, setSelectedStaffId] = useState(null);
+  const [selectedStaffFilter, setSelectedStaffFilter] = useState(null);
 
-  // Fetch maintenance requests and staff list on mount and whenever request status changes.
+  const paymentStatusOptions = [
+    { value: 'UNPAID', label: 'Chưa thanh toán' },
+    { value: 'DEPOSIT_PAID', label: 'Đã cọc' },
+    { value: 'FULLY_PAID', label: 'Đã thanh toán' }
+  ];
+
   useEffect(() => {
     fetchMaintenanceRequests();
     fetchStaffList();
@@ -50,7 +54,17 @@ const ManageMaintenance = () => {
         endpoint = "/api/maintenance-requests/completed";
       }
       const response = await api.get(endpoint);
-      setMaintenanceRequests(response.data);
+      
+      const formattedData = response.data.map(request => ({
+        ...request,
+        paymentStatus: request.paymentStatus || "UNPAID",
+        paymentMethod: request.paymentMethod || "CASH",
+        depositAmount: request.depositAmount || 0,
+        remainingAmount: request.remainingAmount || 0,
+        agreedPrice: request.agreedPrice || 0
+      }));
+      
+      setMaintenanceRequests(formattedData);
     } catch (error) {
       message.error(`Không thể tải ${requestStatus.toLowerCase()} yêu cầu.`);
     } finally {
@@ -119,14 +133,42 @@ const ManageMaintenance = () => {
     }
   };
 
+  const getFilteredData = () => {
+    let filteredData = maintenanceRequests.filter(request => {
+      let matchesStaffFilter = true;
+
+      if (selectedStaffFilter && requestStatus === "COMPLETED") {
+        matchesStaffFilter = request.assignedTo === selectedStaffFilter;
+      }
+
+      return matchesStaffFilter;
+    });
+
+    // Sắp xếp theo ngày hoàn thành mới nhất cho trạng thái COMPLETED
+    if (requestStatus === "COMPLETED") {
+      filteredData.sort((a, b) => {
+        const dateA = new Date(a.completionDate);
+        const dateB = new Date(b.completionDate);
+        return dateB - dateA; 
+      });
+    }
+
+    return filteredData;
+  };
+
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", hidden: true },
     { title: "Khách hàng", dataIndex: "customerId", key: "customerId" },
     { title: "Dự án", dataIndex: "projectId", key: "projectId" },
     { title: "Tư vấn viên", dataIndex: "consultantId", key: "consultantId" },
     { title: "Mô tả", dataIndex: "description", key: "description" },
-    { title: "Trạng thái yêu cầu", dataIndex: "requestStatus", key: "requestStatus" },
-    { title: "Trạng thái bảo trì", dataIndex: "maintenanceStatus", key: "maintenanceStatus" },
+    { title: "Trạng thái yêu cầu", dataIndex: "requestStatus", key: "requestStatus", hidden: requestStatus === "COMPLETED" },
+    { 
+      title: "Trạng thái bảo trì", 
+      dataIndex: "maintenanceStatus", 
+      key: "maintenanceStatus", 
+      hidden: requestStatus === "CONFIRMED" || requestStatus === "CANCELLED"
+    },
     {
       title: "Ngày tạo",
       dataIndex: "createdAt",
@@ -157,8 +199,76 @@ const ManageMaintenance = () => {
       title: "Ngày hoàn thành",
       dataIndex: "completionDate",
       key: "completionDate",
-      hidden: true,
-      render: (date) => moment(date).format("DD-MM-YYYY") || "N/A",
+      hidden: requestStatus === "CONFIRMED",
+      render: (date) => date ? moment(date).format("DD-MM-YYYY") : "N/A"
+    },
+    { 
+      title: "Trạng thái thanh toán", 
+      dataIndex: "paymentStatus", 
+      key: "paymentStatus",
+      render: (status) => {
+        const statusMap = {
+          UNPAID: 'Chưa thanh toán',
+          DEPOSIT_PAID: 'Đã cọc',
+          FULLY_PAID: 'Đã thanh toán'
+        };
+        return statusMap[status] || status;
+      }
+    },
+    { 
+      title: "Phương thức thanh toán", 
+      dataIndex: "paymentMethod", 
+      key: "paymentMethod",
+      render: (method) => {
+        const methods = {
+          CASH: "Tiền mặt",
+          BANK_TRANSFER: "Chuyển khoản",
+        };
+        return methods[method] || method;
+      }
+    },
+    { 
+      title: "Tiền đặt cọc", 
+      dataIndex: "depositAmount", 
+      key: "depositAmount",
+      render: (amount) => new Intl.NumberFormat('vi-VN', { 
+        style: 'currency', 
+        currency: 'VND',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(amount || 0)
+    },
+    { 
+      title: "Số tiền còn lại", 
+      dataIndex: "remainingAmount", 
+      key: "remainingAmount",
+      render: (amount) => new Intl.NumberFormat('vi-VN', { 
+        style: 'currency', 
+        currency: 'VND',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(amount || 0)
+    },
+    { 
+      title: "Giá thỏa thuận", 
+      dataIndex: "agreedPrice", 
+      key: "agreedPrice",
+      render: (price) => new Intl.NumberFormat('vi-VN', { 
+        style: 'currency', 
+        currency: 'VND',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(price || 0)
+    },
+    { 
+      title: "Nhân viên được giao", 
+      dataIndex: "assignedTo", 
+      key: "assignedTo",
+      hidden: requestStatus === "CONFIRMED" || requestStatus === "CANCELLED",
+      render: (staffId) => {
+        const assignedStaff = staffList.find(staff => staff.id === staffId);
+        return assignedStaff ? assignedStaff.name : 'Chưa phân công';
+      }
     },
     {
       title: "Hành động",
@@ -180,25 +290,45 @@ const ManageMaintenance = () => {
           )}
         </>
       ),
-          hidden: requestStatus === "COMPLETED",
+      hidden: requestStatus === "COMPLETED",
     },
   ];
 
   return (
     <div>
       <h1>Yêu cầu bảo trì</h1>
-      <Select
-        style={{ width: 200, marginBottom: 16 }}
-        value={requestStatus}
-        onChange={(value) => setRequestStatus(value)}
-      >
-        <Option value="CONFIRMED">Đã xác nhận</Option>
-        <Option value="CANCELLED">Đã hủy</Option>
-        <Option value="COMPLETED">Đã hoàn thành</Option>
-      </Select>
+      <div style={{ marginBottom: 16, display: 'flex', gap: 16 }}>
+        <Select
+          style={{ width: 200 }}
+          value={requestStatus}
+          onChange={(value) => {
+            setRequestStatus(value);
+          }}
+        >
+          <Option value="CONFIRMED">Đã xác nhận</Option>
+          <Option value="CANCELLED">Đã hủy</Option>
+          <Option value="COMPLETED">Đã hoàn thành</Option>
+        </Select>
+
+        {requestStatus === "COMPLETED" && (
+          <Select
+            style={{ width: 200 }}
+            placeholder="Lọc theo nhân viên"
+            allowClear
+            onChange={(value) => setSelectedStaffFilter(value)}
+          >
+            {staffList.map((staff) => (
+              <Option key={staff.id} value={staff.id}>
+                {staff.name}
+              </Option>
+            ))}
+          </Select>
+        )}
+      </div>
+
       <Table
-        columns={columns.filter(column => !column.hidden)} // Filter out hidden columns
-        dataSource={maintenanceRequests}
+        columns={columns.filter(column => !column.hidden)}
+        dataSource={getFilteredData()}
         loading={loading}
         rowKey="id"
       />
